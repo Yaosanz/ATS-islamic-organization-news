@@ -1,0 +1,8 @@
+{
+  "venvPath": ".",
+  "venv": "venv",
+  "include": ["app", "src", "prepare_data.py", "precompute_embeddings.py", "train_light.py", "local_demo_train.py"],
+  "exclude": ["**/__pycache__", "data", "models", "results", "logs", ".venv", "venv/Lib/site-packages"],
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "basic"
+}

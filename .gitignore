@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+venv/
+.venv/
+
+# IDE
+.vscode/
+
+# Data and model artifacts
+data/
+models/
+logs/
+results/
+indosum/
+liputan6_data/
+liputan6_data.tar.gz
+
+# Large datasets / archives
+*.tar
+*.tar.gz
+*.zip
+*.7z
+*.csv
+*.xls
+*.xlsx
+*.doc
+*.docx
+*.pdf
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Notebook checkpoints
+.ipynb_checkpoints/
