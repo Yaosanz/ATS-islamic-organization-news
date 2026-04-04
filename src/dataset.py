@@ -12,7 +12,7 @@ import pickle
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Union
 from pathlib import Path
 
 
@@ -169,7 +169,7 @@ def create_dataloader(
     )
 
 
-def load_processed_data(data_dir: str, name: str) -> Tuple[List, List, List]:
+def load_processed_data(data_dir: Union[str, Path], name: str) -> Tuple[List, List, List]:
     """
     Muat data yang sudah diproses dari file pickle.
 

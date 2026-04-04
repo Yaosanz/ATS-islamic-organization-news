@@ -20,7 +20,7 @@ import pickle
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Union
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 
@@ -159,7 +159,7 @@ def greedy_extractive_labels(
 #  LOAD INDOSUM
 # ─────────────────────────────────────────────────────────────────
 
-def load_indosum(indosum_dir: str, split: str = 'train') -> List[Dict]:
+def load_indosum(indosum_dir: Union[str, Path], split: str = 'train') -> List[Dict]:
     """
     Muat dataset IndoSum dari file JSONL.
 
@@ -174,11 +174,11 @@ def load_indosum(indosum_dir: str, split: str = 'train') -> List[Dict]:
     Returns:
         List of dict: {id, sentences, labels, category}
     """
-    indosum_dir = Path(indosum_dir)
+    indosum_path = Path(indosum_dir)
     examples = []
 
     for part in range(1, 6):
-        filepath = indosum_dir / f"{split}.0{part}.jsonl"
+        filepath = indosum_path / f"{split}.0{part}.jsonl"
         if not filepath.exists():
             print(f"[WARN] File tidak ditemukan: {filepath}")
             continue
@@ -228,11 +228,11 @@ def load_indosum(indosum_dir: str, split: str = 'train') -> List[Dict]:
 # ─────────────────────────────────────────────────────────────────
 
 def load_ormas_csv(
-    csv_path: str,
+    csv_path: Union[str, Path],
     max_samples: Optional[int] = None,
     max_select: int = 3,
     save_cache: bool = True,
-    cache_dir: str = 'data/processed'
+    cache_dir: Union[str, Path] = 'data/processed'
 ) -> List[Dict]:
     """
     Muat dataset Ormas Liputan6 dari CSV dan hasilkan label ekstraktif.
@@ -247,7 +247,8 @@ def load_ormas_csv(
     Returns:
         List of dict: {id, sentences, labels, title, summary, source}
     """
-    cache_path = Path(cache_dir) / f"ormas_processed_{max_samples or 'all'}.pkl"
+    cache_dir_path = Path(cache_dir)
+    cache_path = cache_dir_path / f"ormas_processed_{max_samples or 'all'}.pkl"
 
     # Cek cache
     if cache_path.exists():
@@ -256,7 +257,7 @@ def load_ormas_csv(
             return pickle.load(f)
 
     print(f"[INFO] Memuat {csv_path} ...")
-    df = pd.read_csv(csv_path)
+    df = pd.read_csv(Path(csv_path))
     df = df.dropna(subset=['content', 'summary'])
     df = df[df['content'].str.len() > 100]
     df = df[df['summary'].str.len() > 20]
@@ -309,7 +310,7 @@ def load_ormas_csv(
 
     # Simpan cache
     if save_cache:
-        os.makedirs(cache_dir, exist_ok=True)
+        os.makedirs(cache_dir_path, exist_ok=True)
         with open(cache_path, 'wb') as f:
             pickle.dump(examples, f)
         print(f"[INFO] Cache disimpan ke: {cache_path}")
@@ -321,7 +322,7 @@ def load_ormas_csv(
 #  LOAD LIPUTAN6 CANONICAL JSON
 # ─────────────────────────────────────────────────────────────────
 
-def load_liputan6_canonical(data_dir: str, split: str = 'train',
+def load_liputan6_canonical(data_dir: Union[str, Path], split: str = 'train',
                              max_samples: Optional[int] = None) -> List[Dict]:
     """
     Muat dataset Liputan6 canonical dari folder JSON.
@@ -334,12 +335,12 @@ def load_liputan6_canonical(data_dir: str, split: str = 'train',
     Returns:
         List of dict: {id, sentences, labels, clean_summary}
     """
-    data_dir = Path(data_dir) / split
-    if not data_dir.exists():
-        print(f"[WARN] Direktori tidak ditemukan: {data_dir}")
+    split_dir = Path(data_dir) / split
+    if not split_dir.exists():
+        print(f"[WARN] Direktori tidak ditemukan: {split_dir}")
         return []
 
-    json_files = sorted(data_dir.glob("*.json"))
+    json_files = sorted(split_dir.glob("*.json"))
     if max_samples:
         json_files = json_files[:max_samples]
 
@@ -396,7 +397,7 @@ def load_liputan6_canonical(data_dir: str, split: str = 'train',
 
 def split_and_save(
     examples: List[Dict],
-    output_dir: str,
+    output_dir: Union[str, Path],
     name: str,
     val_ratio: float = 0.1,
     test_ratio: float = 0.1,
@@ -413,14 +414,15 @@ def split_and_save(
         test_ratio: Proporsi data test
         seed: Random seed
     """
-    os.makedirs(output_dir, exist_ok=True)
+    output_path = Path(output_dir)
+    os.makedirs(output_path, exist_ok=True)
 
     train_val, test = train_test_split(examples, test_size=test_ratio, random_state=seed)
     train, val = train_test_split(train_val, test_size=val_ratio / (1 - test_ratio), random_state=seed)
 
     splits = {'train': train, 'val': val, 'test': test}
     for split_name, data in splits.items():
-        path = Path(output_dir) / f"{name}_{split_name}.pkl"
+        path = output_path / f"{name}_{split_name}.pkl"
         with open(path, 'wb') as f:
             pickle.dump(data, f)
         print(f"[INFO] {split_name}: {len(data)} sampel → {path}")

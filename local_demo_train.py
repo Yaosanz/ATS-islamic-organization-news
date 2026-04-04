@@ -139,8 +139,11 @@ print("\n[3/5] Training Summarization Head...")
 # Import train_light utilities
 import importlib.util
 tl_spec = importlib.util.spec_from_file_location("train_light", "train_light.py")
+if tl_spec is None or tl_spec.loader is None:
+    raise ImportError("Gagal memuat modul train_light.py")
 tl = importlib.util.module_from_spec(tl_spec)
-tl_spec.loader.exec_module(tl)
+tl_loader = tl_spec.loader
+tl_loader.exec_module(tl)
 
 EmbeddingDataset = tl.EmbeddingDataset
 collate_emb      = tl.collate_emb
@@ -278,8 +281,11 @@ antar organisasi Islam di Indonesia."""
 from src.summarize import HeadOnlySummarizationPipeline
 import importlib.util
 tl_spec2 = importlib.util.spec_from_file_location("train_light2", "train_light.py")
+if tl_spec2 is None or tl_spec2.loader is None:
+    raise ImportError("Gagal memuat modul train_light.py (inference step)")
 tl2 = importlib.util.module_from_spec(tl_spec2)
-tl_spec2.loader.exec_module(tl2)
+tl_loader2 = tl_spec2.loader
+tl_loader2.exec_module(tl2)
 
 head2 = tl2.SummarizationHead()
 head2.load_state_dict(ckpt['model_state'])

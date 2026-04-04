@@ -22,7 +22,7 @@ import torch.nn as nn
 import numpy as np
 from pathlib import Path
 from tqdm import tqdm
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from transformers import (
     AutoTokenizer,
     get_linear_schedule_with_warmup,
@@ -266,7 +266,7 @@ def evaluate_epoch(
 #  PIPELINE TRAINING UTAMA
 # ─────────────────────────────────────────────────────────────────
 
-def train(config: Dict = None):
+def train(config: Optional[Dict[str, Any]] = None):
     """
     Pipeline training lengkap dengan 2 tahap.
 
@@ -331,13 +331,7 @@ def train(config: Dict = None):
     print(f"  Total parameter: {model.get_total_params():,}")
 
     # ── Loss function ────────────────────────────────────────────
-    # pos_weight mengatasi imbalance kelas (kalimat positif << negatif)
-    pos_weight = torch.tensor([cfg['pos_weight']], device=device)
-    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight, reduction='mean')
-    # Karena model sudah sigmoid, kita perlu loss berbeda
-    # Gunakan BCELoss biasa karena output model sudah sigmoid
-    criterion = nn.BCELoss(reduction='mean')
-    # Untuk pos_weight dengan BCE tanpa logits, skala loss manual
+    # Model mengeluarkan probabilitas sigmoid, jadi gunakan weighted BCE custom.
     criterion_weighted = WeightedBCELoss(pos_weight=cfg['pos_weight'])
 
     logger = TrainingLogger(cfg['log_dir'], run_name=f"indobert_{int(time.time())}")

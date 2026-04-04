@@ -9,15 +9,13 @@ Fungsi utama:
     summarize_with_highlights(text, ...) -> { summary, sentences, scores }
 """
 
-import re
 import torch
 import numpy as np
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple, Union
+from typing import List, Dict, Optional
 
 from src.preprocess import clean_text, split_sentences
 from src.model import IndoBERTSumExtractor, load_model
-from src.evaluate import scores_to_summary
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -67,7 +65,7 @@ class SummarizationPipeline:
         import json
         from transformers import AutoTokenizer
 
-        model_dir = Path(model_dir)
+        model_path = Path(model_dir)
 
         # Deteksi device
         if device is None:
@@ -76,7 +74,7 @@ class SummarizationPipeline:
             _device = torch.device(device)
 
         # Muat konfigurasi
-        config_path = model_dir / 'config.json'
+        config_path = model_path / 'config.json'
         bert_name = 'indobenchmark/indobert-base-p1'
         if config_path.exists():
             with open(config_path) as f:
@@ -84,11 +82,11 @@ class SummarizationPipeline:
             bert_name = cfg.get('bert_model_name', bert_name)
 
         # Cari file model
-        model_files = list(model_dir.glob('model_best*.pt'))
+        model_files = list(model_path.glob('model_best*.pt'))
         if not model_files:
-            model_files = list(model_dir.glob('model*.pt'))
+            model_files = list(model_path.glob('model*.pt'))
         if not model_files:
-            raise FileNotFoundError(f"File model tidak ditemukan di {model_dir}")
+            raise FileNotFoundError(f"File model tidak ditemukan di {model_path}")
 
         # Pilih model terbaru
         model_path = sorted(model_files)[-1]
@@ -98,9 +96,9 @@ class SummarizationPipeline:
 
         # Muat tokenizer
         try:
-            tokenizer = AutoTokenizer.from_pretrained(str(model_dir))
+            tokenizer = AutoTokenizer.from_pretrained(str(model_path))
         except Exception:
-            print(f"[WARN] Tokenizer tidak ditemukan di {model_dir}, "
+            print(f"[WARN] Tokenizer tidak ditemukan di {model_path}, "
                   f"memuat dari HuggingFace: {bert_name}")
             tokenizer = AutoTokenizer.from_pretrained(bert_name)
 
@@ -295,7 +293,9 @@ class HeadOnlySummarizationPipeline:
         # Import SummarizationHead dari train_light.py
         tl_path = _Path(__file__).resolve().parent.parent / 'train_light.py'
         spec = importlib.util.spec_from_file_location("train_light", str(tl_path))
-        tl   = importlib.util.module_from_spec(spec)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Gagal memuat modul train_light.py dari {tl_path}")
+        tl = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(tl)
 
         head = tl.SummarizationHead(

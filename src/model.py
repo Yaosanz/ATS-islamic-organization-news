@@ -15,7 +15,7 @@ import torch
 import torch.nn as nn
 import math
 from transformers import AutoModel, AutoConfig
-from typing import Optional, Tuple
+from typing import Optional, Tuple, cast
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -50,7 +50,8 @@ class PositionalEncoding(nn.Module):
         Returns:
             x + positional encoding
         """
-        x = x + self.pe[:, :x.size(1), :]
+        pe = cast(torch.Tensor, self.pe)
+        x = x + pe[:, :x.size(1), :]
         return self.dropout(x)
 
 
@@ -244,7 +245,7 @@ class IndoBERTSumExtractor(nn.Module):
 #  FUNGSI UTILITAS MODEL
 # ─────────────────────────────────────────────────────────────────
 
-def save_model(model: IndoBERTSumExtractor, save_dir: str, epoch: int = None):
+def save_model(model: IndoBERTSumExtractor, save_dir: str, epoch: Optional[int] = None):
     """
     Simpan model ke direktori.
 

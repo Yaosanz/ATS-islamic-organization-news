@@ -29,6 +29,7 @@ from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 from tqdm import tqdm
 from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
+from typing import cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 ROOT = Path(__file__).resolve().parent
@@ -121,7 +122,8 @@ class PositionalEncoding(nn.Module):
         self.register_buffer('pe', pe.unsqueeze(0))
 
     def forward(self, x):
-        return self.dropout(x + self.pe[:, :x.size(1)])
+        pe = cast(torch.Tensor, self.pe)
+        return self.dropout(x + pe[:, :x.size(1)])
 
 
 class SummarizationHead(nn.Module):
