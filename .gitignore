@@ -24,6 +24,7 @@ liputan6_data.tar.gz
 # Large datasets / archives
 *.tar
 *.tar.gz
+*.rar
 *.zip
 *.7z
 *.csv
@@ -32,6 +33,9 @@ liputan6_data.tar.gz
 *.doc
 *.docx
 *.pdf
+
+# App-generated debug artifacts
+debug_logs/
 
 # OS files
 .DS_Store
