@@ -10,6 +10,9 @@ Jalankan dengan:
 
 import os
 import sys
+import json
+import time
+import random
 import torch
 import numpy as np
 import streamlit as st
@@ -31,7 +34,7 @@ st.set_page_config(
     menu_items={
         'About': "Sistem Peringkasan Otomatis Artikel Ormas Islam\n"
                  "menggunakan IndoBERT\n\n"
-                 "Skripsi - NLP & Automatic Text Summarization"
+                 "NLP & Automatic Text Summarization"
     }
 )
 
@@ -221,6 +224,35 @@ def render_sidebar():
         )
 
         st.markdown("---")
+        st.markdown("### 🧪 Debug (Sidang)")
+
+        debug_verbose = st.checkbox(
+            "Tampilkan detail skor & tabel",
+            value=True,
+            help="Menampilkan skor per kalimat, indeks terpilih, dan tabel detail"
+        )
+        debug_shuffle = st.checkbox(
+            "Uji Shuffle (bias posisi)",
+            value=False,
+            help="Acak urutan kalimat untuk membuktikan bias posisi"
+        )
+        debug_log = st.checkbox(
+            "Simpan log ke debug_logs/summaries.jsonl",
+            value=True,
+            help="Menyimpan detail run untuk bukti sidang"
+        )
+        apply_lead_penalty = st.checkbox(
+            "Aktifkan penalti lead (demo)",
+            value=False,
+            help="Kurangi skor kalimat awal agar tidak selalu menang"
+        )
+        penalty_alpha = st.slider(
+            "Nilai penalti (alpha)",
+            min_value=0.0, max_value=0.5, value=0.15, step=0.01,
+            help="Semakin besar, semakin besar penalti untuk kalimat awal"
+        )
+
+        st.markdown("---")
         st.markdown("### ℹ️ Tentang")
         st.markdown("""
         **Metode:** IndoBERT Extractive Summarization
@@ -232,7 +264,17 @@ def render_sidebar():
         **Metrik Evaluasi:** ROUGE-1, ROUGE-2, ROUGE-L
         """)
 
-    return model_dir_input, ratio, int(max_sents), int(min_sents)
+    return (
+        model_dir_input,
+        ratio,
+        int(max_sents),
+        int(min_sents),
+        debug_verbose,
+        debug_shuffle,
+        debug_log,
+        apply_lead_penalty,
+        penalty_alpha,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -294,6 +336,50 @@ def render_score_chart(sentences, scores, selected_idxs):
     return fig
 
 
+def penalize_by_position(scores, alpha=0.15):
+    n = max(1, len(scores))
+    if n == 1:
+        return scores[:]
+    adjusted = []
+    for i, s in enumerate(scores):
+        factor = 1 - alpha * (1 - i / (n - 1))
+        adjusted.append(s * factor)
+    return adjusted
+
+
+def build_debug_payload(text, result, ratio, min_sents, max_sents,
+                        apply_penalty, penalty_alpha):
+    sentences = result.get('sentences', [])
+    scores = result.get('scores', [])
+    selected = result.get('selected_idxs', [])
+    adjusted = scores
+    if apply_penalty and scores:
+        adjusted = penalize_by_position(scores, alpha=penalty_alpha)
+        k = max(min_sents, min(max_sents, int(max(1, len(sentences)) * ratio)))
+        selected = sorted(
+            sorted(range(len(adjusted)), key=lambda i: adjusted[i], reverse=True)[:k]
+        )
+
+    token_counts = [len(s.split()) for s in sentences]
+    return {
+        'timestamp': time.time(),
+        'params': {
+            'ratio': ratio,
+            'min_sentences': min_sents,
+            'max_sentences': max_sents,
+            'apply_lead_penalty': apply_penalty,
+            'penalty_alpha': penalty_alpha,
+        },
+        'text_snippet': text[:300],
+        'sentences': sentences,
+        'scores': scores,
+        'adjusted_scores': adjusted,
+        'token_counts': token_counts,
+        'selected_idxs': selected,
+        'stats': result.get('stats', {}),
+    }
+
+
 # ─────────────────────────────────────────────────────────────────
 #  HALAMAN UTAMA
 # ─────────────────────────────────────────────────────────────────
@@ -308,7 +394,17 @@ def main():
     """, unsafe_allow_html=True)
 
     # Sidebar
-    model_dir, ratio, max_sents, min_sents = render_sidebar()
+    (
+        model_dir,
+        ratio,
+        max_sents,
+        min_sents,
+        debug_verbose,
+        debug_shuffle,
+        debug_log,
+        apply_lead_penalty,
+        penalty_alpha,
+    ) = render_sidebar()
 
     # ── Tab utama ──────────────────────────────────────────────
     tab1, tab2, tab3 = st.tabs(["📝 Ringkasan Artikel", "📁 Upload File", "📊 Tentang Penelitian"])
@@ -387,6 +483,16 @@ Menteri Agama turut mengapresiasi kontribusi NU dan Muhammadiyah dalam memperkua
                             )
                         else:
                             st.success(f"✅ Ringkasan berhasil dibuat ({model_used})")
+                    debug_payload = build_debug_payload(
+                        article_text,
+                        result,
+                        ratio,
+                        min_sents,
+                        max_sents,
+                        apply_lead_penalty,
+                        penalty_alpha,
+                    )
+
                     st.markdown(
                         f'<div class="summary-box">{result["summary"]}</div>',
                         unsafe_allow_html=True
@@ -414,10 +520,18 @@ Menteri Agama turut mengapresiasi kontribusi NU dan Muhammadiyah dalam memperkua
 
                     # Simpan hasil di session_state untuk tab visualisasi
                     st.session_state['last_result'] = result
+                    st.session_state['last_debug'] = debug_payload
+
+                    if debug_log:
+                        os.makedirs("debug_logs", exist_ok=True)
+                        log_path = os.path.join("debug_logs", "summaries.jsonl")
+                        with open(log_path, "a", encoding="utf-8") as fh:
+                            fh.write(json.dumps(debug_payload, ensure_ascii=False) + "\n")
 
             # ── Visualisasi (jika sudah ada hasil) ──
             if 'last_result' in st.session_state:
                 result = st.session_state['last_result']
+                debug_payload = st.session_state.get('last_debug')
                 sentences = result.get('sentences', [])
                 scores = result.get('scores', [])
                 selected = result.get('selected_idxs', [])
@@ -446,6 +560,53 @@ Menteri Agama turut mengapresiasi kontribusi NU dan Muhammadiyah dalam memperkua
                             for i, s in enumerate(sentences)
                         ])
                         st.dataframe(df_sents, use_container_width=True, height=300)
+
+                    if debug_payload and debug_verbose:
+                        with st.expander("🧪 Debug Detail (Sidang)", expanded=False):
+                            st.write("Selected idxs:", debug_payload.get('selected_idxs', []))
+                            st.write("Scores (raw):", debug_payload.get('scores', [])[:30])
+                            st.write("Scores (adjusted):", debug_payload.get('adjusted_scores', [])[:30])
+                            st.write("Token counts:", debug_payload.get('token_counts', [])[:30])
+
+                            import pandas as pd
+                            df_debug = pd.DataFrame({
+                                'idx': list(range(len(debug_payload.get('sentences', [])))),
+                                'sentence': debug_payload.get('sentences', []),
+                                'score': debug_payload.get('scores', []),
+                                'adjusted_score': debug_payload.get('adjusted_scores', []),
+                                'tokens': debug_payload.get('token_counts', []),
+                            })
+                            st.dataframe(df_debug, use_container_width=True, height=320)
+
+                            if debug_shuffle and sentences:
+                                shuffled = sentences[:]
+                                random.shuffle(shuffled)
+                                shuffled_text = ' '.join(shuffled)
+                                pipeline, err = load_pipeline_safe(model_dir)
+                                if pipeline is not None:
+                                    shuffled_result = pipeline.summarize(
+                                        shuffled_text,
+                                        ratio=ratio,
+                                        min_sentences=min_sents,
+                                        max_sentences=max_sents
+                                    )
+                                else:
+                                    shuffled_result = tfidf_summarize(
+                                        shuffled_text, ratio, min_sents, max_sents
+                                    )
+                                shuffled_debug = build_debug_payload(
+                                    shuffled_text,
+                                    shuffled_result,
+                                    ratio,
+                                    min_sents,
+                                    max_sents,
+                                    apply_lead_penalty,
+                                    penalty_alpha,
+                                )
+                                st.write("Shuffle selected idxs:",
+                                         shuffled_debug.get('selected_idxs', []))
+                                st.write("Shuffle scores (raw):",
+                                         shuffled_debug.get('scores', [])[:30])
 
     # ════════════════════════════════════════════════════════════
     #  TAB 2: UPLOAD FILE
@@ -499,6 +660,21 @@ Menteri Agama turut mengapresiasi kontribusi NU dan Muhammadiyah dalam memperkua
                     unsafe_allow_html=True
                 )
 
+                if debug_log:
+                    debug_payload = build_debug_payload(
+                        article_text,
+                        result,
+                        ratio,
+                        min_sents,
+                        max_sents,
+                        apply_lead_penalty,
+                        penalty_alpha,
+                    )
+                    os.makedirs("debug_logs", exist_ok=True)
+                    log_path = os.path.join("debug_logs", "summaries.jsonl")
+                    with open(log_path, "a", encoding="utf-8") as fh:
+                        fh.write(json.dumps(debug_payload, ensure_ascii=False) + "\n")
+
                 # Download button
                 st.download_button(
                     "⬇️ Unduh Ringkasan (.txt)",
@@ -521,24 +697,37 @@ Menteri Agama turut mengapresiasi kontribusi NU dan Muhammadiyah dalam memperkua
             **Peringkasan Otomatis Artikel Tentang Ormas Islam di Media Online
             Menggunakan Algoritma IndoBERT**
 
-            ### Tujuan Penelitian
-            1. Mengimplementasikan algoritma **IndoBERT** untuk peringkasan otomatis
-               artikel Ormas Islam dari media online Liputan6.com
-            2. Merancang dan membangun **antarmuka pengguna** sederhana yang
-               menampilkan hasil peringkasan secara interaktif
-            3. Menganalisis hasil peringkasan menggunakan metrik **ROUGE** untuk
-               mengukur kualitas ringkasan yang dihasilkan
+                **Tujuan Penelitian**
+                1. Menghasilkan ringkasan otomatis yang **relevan, ringkas, dan informatif**
+                    dari artikel Ormas Islam.
+                2. Menyediakan **antarmuka interaktif** untuk mencoba model dan melihat
+                    proses pemilihan kalimat.
+                3. Mengevaluasi kualitas ringkasan menggunakan metrik **ROUGE** serta
+                    analisis kualitatif pada beberapa contoh artikel.
 
-            ### Metode
-            | Komponen | Detail |
-            |----------|--------|
-            | Model Dasar | `indobenchmark/indobert-base-p1` |
-            | Pendekatan | Extractive Summarization |
-            | Arsitektur | BertSum + Inter-Sentence Transformer |
-            | Dataset Training | IndoSum + Ormas Liputan6 |
-            | Evaluasi | ROUGE-1, ROUGE-2, ROUGE-L |
+                **Data & Ruang Lingkup**
+                - **Sumber data utama:** artikel Liputan6 (domain Ormas Islam).
+                - **Data pendukung:** IndoSum untuk memperkaya pola ringkasan.
+                - **Satuan data:** artikel lengkap + ringkasan referensi (abstraktif).
+                - **Tujuan data:** melatih model memilih kalimat penting (extractive).
 
-            ### Arsitektur Model
+                **Proses Data (ringkas)**
+                1. **Pembersihan teks:** hapus HTML, URL, spasi ganda, dan noise umum.
+                2. **Split kalimat:** artikel dipecah menjadi kalimat-kalimat kandidat.
+                3. **Label ekstraktif:** kalimat terbaik dipilih dengan greedy-oracle
+                    terhadap ringkasan referensi (untuk pelatihan).
+                4. **Split data:** train/valid/test agar evaluasi objektif.
+
+                **Metode**
+                | Komponen | Detail |
+                |----------|--------|
+                | Model Dasar | `indobenchmark/indobert-base-p1` |
+                | Pendekatan | Extractive Summarization |
+                | Arsitektur | BertSum + Inter-Sentence Transformer |
+                | Dataset Training | IndoSum + Ormas Liputan6 |
+                | Evaluasi | ROUGE-1, ROUGE-2, ROUGE-L |
+
+                **Arsitektur Model**
             ```
             Artikel
               ↓
@@ -560,32 +749,35 @@ Menteri Agama turut mengapresiasi kontribusi NU dan Muhammadiyah dalam memperkua
 
         with col_b:
             st.markdown("""
-            ### 📊 Dataset
+            **📊 Dataset**
 
             | Dataset | Jumlah | Keterangan |
             |---------|--------|------------|
-            | Ormas Liputan6 | ~35.000 | Artikel Ormas Islam |
+            | Ormas Liputan6 | ~8.000 | Artikel Ormas Islam |
             | IndoSum | ~20.000 | Extractive summarization |
             | Liputan6 Canonical | ~200.000 | Artikel umum |
 
-            ### 🔧 Teknologi
+            **🔧 Teknologi**
             - **Python** 3.9+
             - **PyTorch** 2.0
             - **HuggingFace Transformers** 4.35
             - **Streamlit** 1.28 (UI)
             - **ROUGE Score** (evaluasi)
 
-            ### 📈 Alur Penelitian
-            1. **Pengumpulan Data** — Scraping & dataset Liputan6
-            2. **Preprocessing** — Membersihkan teks, split kalimat,
-               generate label ekstraktif (greedy oracle)
-            3. **Training** — Fine-tune IndoBERT 2 tahap
-               (frozen BERT → full fine-tune)
-            4. **Evaluasi** — ROUGE-1, ROUGE-2, ROUGE-L,
-               Precision, Recall, F1
-            5. **Deployment** — Streamlit dashboard
+                        **📈 Alur Penelitian (ringkas)**
+                        1. **Koleksi & kurasi data** sesuai domain artikel.
+                        2. **Preprocessing** untuk memastikan teks bersih dan konsisten.
+                        3. **Pelatihan model** (head-only atau full fine-tune sesuai sumber daya).
+                        4. **Evaluasi** dengan ROUGE dan inspeksi hasil ringkasan.
+                        5. **Deployment** ke Streamlit agar mudah diuji pengguna.
 
-            ### 📖 Referensi
+                        **🔍 Catatan Interpretasi**
+                        - Artikel berita sering punya **lead bias** (inti di paragraf awal),
+                            sehingga model cenderung memilih kalimat awal.
+                        - Debug mode menampilkan skor per kalimat untuk transparansi
+                            dan validasi di sidang.
+
+                        **📖 Referensi**
             - Liu & Lapata (2019). *Text Summarization with Pretrained Encoders*
             - Wilie et al. (2020). *IndoNLU: Benchmark and Resources for Evaluating Indonesian NLP*
             - Kurniawan & Louvan (2018). *IndoSum: A New Benchmark for Indonesian Automatic Text Summarization*
@@ -594,7 +786,7 @@ Menteri Agama turut mengapresiasi kontribusi NU dan Muhammadiyah dalam memperkua
     # Footer
     st.markdown("""
     <div class="footer">
-        Sistem Peringkasan Otomatis Artikel Ormas Islam · IndoBERT · Skripsi NLP
+        Sistem Peringkasan Otomatis Artikel Ormas Islam · IndoBERT · NLP
     </div>
     """, unsafe_allow_html=True)
 
