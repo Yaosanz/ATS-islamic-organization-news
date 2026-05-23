@@ -105,7 +105,8 @@ st.markdown("""
     /* Sembunyikan menu Streamlit default */
     #MainMenu { visibility: hidden; }
     footer { visibility: hidden; }
-    header { visibility: hidden; }
+    /* Jangan sembunyikan header, karena kontrol buka/tutup sidebar ada di sana */
+    header { visibility: visible; }
 
     /* Tombol */
     .stButton>button {
